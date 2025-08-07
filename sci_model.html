@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>브랜드 오디언스 분석기 데모</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons 라이브러리 추가 -->
+  <script src="https://unpkg.com/@phosphor-icons/web@2.0.3/dist/phosphor.js"></script>
+  <style>
+    /* 기본 폰트 설정 */
+    body { font-family: 'Inter', sans-serif; }
+    /* 아이콘 스타일링 */
+    .ph { display: inline-block; vertical-align: middle; }
+    /* 스피너 아이콘 애니메이션 */
+    .spinner-icon { animation: spin 1s linear infinite; }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gray-100 flex items-center justify-center p-4 sm:p-6 font-sans">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 sm:p-8 space-y-6">
+    <div class="text-center">
+      <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 flex items-center justify-center space-x-2">
+        <i class="ph-magnifying-glass text-indigo-500 text-[2rem]"></i>
+        <span>브랜드 오디언스 분석</span>
+      </h1>
+      <p class="mt-2 text-gray-500 text-sm sm:text-base">브랜드 뉴스 기반의 오디언스 추천 데모</p>
+    </div>
+
+    <div class="space-y-4">
+      <div>
+        <label for="brand-input" class="block text-gray-700 font-semibold mb-1">브랜드명</label>
+        <input
+          type="text"
+          id="brand-input"
+          value="SC제일은행"
+          placeholder="예: SC제일은행"
+          class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+        />
+      </div>
+
+      <div>
+        <label for="objective-input" class="block text-gray-700 font-semibold mb-1">마케팅 목적 (선택)</label>
+        <input
+          type="text"
+          id="objective-input"
+          value="대출 관심 고객 타겟"
+          placeholder="예: 대출 관심 고객 타겟"
+          class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+        />
+      </div>
+
+      <button id="analyze-button" class="w-full flex items-center justify-center px-4 py-3 text-lg font-bold rounded-lg text-white transition-all transform bg-indigo-600 hover:bg-indigo-700 active:scale-95">
+        <i class="ph-arrows-clockwise text-[1.25rem] mr-2"></i>
+        <span>분석 시작</span>
+      </button>
+    </div>
+
+    <div id="error-message" class="hidden p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg mt-4" role="alert">
+      <p class="font-bold">오류 발생</p>
+      <p id="error-text"></p>
+    </div>
+
+    <!-- 결과 섹션 -->
+    <div id="results-container" class="hidden space-y-6 mt-6">
+      <div>
+        <h2 class="text-xl font-bold text-gray-800 border-b-2 border-indigo-400 pb-1 mb-2">
+          📰 최신 뉴스 요약
+        </h2>
+        <div id="news-summary" class="bg-gray-50 p-4 rounded-lg shadow-inner text-sm leading-relaxed text-gray-700 whitespace-pre-wrap"></div>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-gray-800 border-b-2 border-indigo-400 pb-1 mb-2">
+          🎯 오디언스 추천 결과
+        </h2>
+        <div id="audience-suggestions" class="bg-gray-50 p-4 rounded-lg shadow-inner text-sm leading-relaxed text-gray-700 whitespace-pre-wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const brandInput = document.getElementById('brand-input');
+      const objectiveInput = document.getElementById('objective-input');
+      const analyzeButton = document.getElementById('analyze-button');
+      const newsSummaryEl = document.getElementById('news-summary');
+      const audienceSuggestionsEl = document.getElementById('audience-suggestions');
+      const errorMessageEl = document.getElementById('error-message');
+      const errorTextEl = document.getElementById('error-text');
+      const resultsContainerEl = document.getElementById('results-container');
+      const originalButtonHtml = analyzeButton.innerHTML;
+
+      const handleAnalyze = async () => {
+        const brand = brandInput.value;
+        const objective = objectiveInput.value;
+
+        // UI 상태 초기화
+        analyzeButton.disabled = true;
+        analyzeButton.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'active:scale-95');
+        analyzeButton.classList.add('bg-indigo-300', 'cursor-not-allowed');
+        analyzeButton.innerHTML = `<i class="ph-spinner-gap spinner-icon mr-2 text-[1.25rem]"></i><span>분석 중...</span>`;
+        
+        errorMessageEl.classList.add('hidden');
+        resultsContainerEl.classList.add('hidden');
+        newsSummaryEl.textContent = '';
+        audienceSuggestionsEl.textContent = '';
+
+        try {
+          const rssUrl = `https://news.google.com/rss/search?q=${brand}&hl=ko&gl=KR&ceid=KR:ko`;
+          const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
+          
+          // 뉴스 데이터 수집
+          const newsResponse = await fetch(proxyUrl);
+          if (!newsResponse.ok) throw new Error('뉴스 수집에 실패했습니다.');
+          const newsData = await newsResponse.json();
+          const newsItems = newsData.items?.slice(0, 3) || [];
+
+          if (newsItems.length === 0) {
+            newsSummaryEl.textContent = '최신 뉴스를 찾을 수 없습니다.';
+            throw new Error('뉴스가 없습니다. 다른 브랜드를 시도해 보세요.');
+          }
+
+          // 뉴스 요약 생성
+          const summaryText = newsItems.map(item =>
+            `- ${item.title} (${new Date(item.pubDate).toLocaleDateString()}): ${item.description.replace(/<[^>]*>?/gm, '')}`
+          ).join('\n');
+          newsSummaryEl.textContent = summaryText;
+
+          // LLM 프롬프트 생성 (Streamlit 앱과 동일한 로직)
+          const prompt = objective
+            ? `
+다음은 '${brand}'의 최근 뉴스 요약입니다:
+${summaryText}
+
+'{brand}'의 마케팅 목적은 다음과 같습니다: "${objective}"
+
+위 정보를 기반으로 해당 목적에 적합한 오디언스를 2~3개 추천해 주세요. 각 오디언스는 다음 항목을 포함해야 합니다:
+- 오디언스명
+- 행동 설명
+- 추천 채널
+- 추천 상품 (있는 경우)
+`
+            : `
+다음은 '${brand}'에 대한 최근 뉴스 요약입니다:
+${summaryText}
+
+이 정보를 바탕으로 '${brand}'의 주요 서비스, 포지셔닝, 차별점 인사이트를 요약한 뒤,
+브랜드 특성에 기반한 오디언스 2~3개를 추천해 주세요. 각 오디언스는 다음 항목을 포함해야 합니다:
+- 오디언스명
+- 행동 설명
+- 추천 상품 (있는 경우)
+`;
+          // Gemini API 호출
+          // ✨ 이 부분을 수정했습니다. 실제 API 키를 입력해주세요.
+          const apiKey = 'AIzaSyAPox3YnhDg60gLmdoBq6BjYt3Gm_9EudM';
+          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+          const payload = {
+            contents: [{
+              parts: [{ text: prompt }]
+            }]
+          };
+
+          const geminiResponse = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          
+          if (!geminiResponse.ok) {
+            const errorData = await geminiResponse.json();
+            throw new Error(`LLM 응답 오류: ${errorData.error?.message || '알 수 없는 오류'}`);
+          }
+
+          const geminiResult = await geminiResponse.json();
+          const textResult = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (textResult) {
+            audienceSuggestionsEl.textContent = textResult;
+          } else {
+            throw new Error('LLM 응답에서 유효한 텍스트를 찾을 수 없습니다.');
+          }
+          
+          resultsContainerEl.classList.remove('hidden');
+
+        } catch (err) {
+          console.error(err);
+          errorTextEl.textContent = err.message;
+          errorMessageEl.classList.remove('hidden');
+        } finally {
+          // UI 상태 복원
+          analyzeButton.disabled = false;
+          analyzeButton.classList.remove('bg-indigo-300', 'cursor-not-allowed');
+          analyzeButton.classList.add('bg-indigo-600', 'hover:bg-indigo-700', 'active:scale-95');
+          analyzeButton.innerHTML = originalButtonHtml;
+        }
+      };
+
+      analyzeButton.addEventListener('click', handleAnalyze);
+    });
+  </script>
+</body>
+</html>
